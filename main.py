@@ -60,19 +60,27 @@ def _post(query: Query, startrow: str = "0"):
 
 
 def getCourseListPart(query: Query, startrow: str, retry: int):
+    """Get a part of the course list, 10 rows per request"""
+
     global logger
     response = _post(query, startrow)
+
+    # Loop to re-attempt if the server does not return a 200 status code
     while response.status_code != 200 and retry > 0:
         logger.warning(
             f"Got status code {response.status_code} from server, retrying {retry} times left..."
         )
         response = _post(query, startrow)
         retry -= 1
+
+    # Return error message if the request fails after having retried
     if response.status_code != 200:
         logger.error(
             f"Failed to get response, server returned {response.status_code}: {response.text}, aborting..."
         )
         return None
+
+    # Try to parse data into a json object
     try:
         json = response.json()
     except Exception:
@@ -80,45 +88,71 @@ def getCourseListPart(query: Query, startrow: str, retry: int):
             f"Failed to parse JSON from seg {int(startrow) // 10}, aborting..."
         )
         return None
+
+    # Create dataframe, apply stripping of HTML tags and set index as '序号'
     df = pd.DataFrame(json["courselist"]).applymap(stripHTMLtags)
     df.columns = colnames
     df.set_index("序号", inplace=True)
+
+    # Log success information
     logger.info(f"Successfully got course list row {startrow}-{int(startrow)+9}")
     return df
 
 
 def getTotalCount(query: Query, retry: int):
+    """Get the total number of courses matching the query"""
+
     global logger
     response = _post(query)
+
+    # Loop to re-attempt if the server does not return a 200 status code
     while response.status_code != 200 and retry > 0:
         logger.warning(
             f"Got status code {response.status_code} from server, retrying {retry} times left..."
         )
         response = _post(query)
         retry -= 1
+
+    # Return error message if the request fails after having retried
     if response.status_code != 200:
         logger.error(
             f"Failed to get response, server returned {response.status_code}: {response.text}, aborting..."
         )
         return None
-    json = response.json()
+
+    # Try to parse data into a json object
+    try:
+        json = response.json()
+    except Exception:
+        logger.error(f"Failed to parse JSON, aborting...")
+        return None
+
+    # Log success information
     logger.info(f"Successfully got course count {int(json['count'])}")
     return int(json["count"])
 
 
 def getOptions(retry: int):
+    """Get the available course type and school/department options"""
+
     global logger
     logger.debug(f"GET {base_url}")
     response = requests.get(base_url, headers=headers)
+
+    # Loop to re-attempt if the server does not return a 200 status code
     while response.status_code != 200 and retry > 0:
         logger.warning(
             f"Got status code {response.status_code} from server, retrying {retry} times left..."
         )
         response = requests.get(base_url, headers=headers)
         retry -= 1
+
+    # Return error message if the request fails after having retried
     if response.status_code != 200:
         logger.critical(f"Failed to get options, aborting...")
         return None
+
+    # Parse HTML and extract options
     html = response.text
     soup = bs4.BeautifulSoup(html, "html.parser")
     yuanxi: dict[str, str] = {
@@ -133,42 +167,45 @@ def getOptions(retry: int):
 
 
 def getCourseList(query: Query = data, retry: int = 3):
+    """Retrieve a complete list of courses matching the provided query."""
+
     global logger
+
+    # Get the total number of matching courses
     total_count = getTotalCount(query, retry)
-    while total_count is None and retry > 0:
-        logger.warning(
-            f"Failed to get course count from server, retrying {retry} times left..."
-        )
-        total_count = getTotalCount(query, retry)
-        retry -= 1
     if total_count is None:
         logger.critical(f"Failed to get total count, aborting...")
         return None
+
+    # Check if any matching results were found
     if total_count == 0:
         logger.info(f"Got 0 matching result, aborting...")
         return None
+
+    # Get the course list in segments of 10 rows
     segs = list(range(0, total_count, 10))
     logger.info(f"Got {total_count} courses, {len(segs)} segments to fetch")
-    collect: list[pd.DataFrame | None] = [None] * len(segs)
+
+    # Iterate over each segment and try to retrieve the courses
+    # using a multiprocessing pool to speed up
     pool = Pool()
-    while len(segs) and retry > 0:
-        result = pool.map(
-            ft.partial(getCourseListPart, query, retry=retry), map(str, segs)
-        )
-        for idx, item in zip(segs, result):
-            collect[idx // 10] = item
-        segs = [idx * 10 for idx, item in enumerate(collect) if item is None]
-        logger.info(f"{len(segs)} segments left to fetch")
-        retry -= 1
-    failed = [idx * 10 for idx, item in enumerate(collect) if item is None]
+    result = pool.map(ft.partial(getCourseListPart, query, retry=retry), map(str, segs))
+
+    # Check if there are any failed requests left
+    failed = [idx * 10 for idx, item in enumerate(result) if item is None]
     if len(failed):
         logging.error(f"Failed to fetch {len(failed)} segments: {failed}")
     else:
         logger.info(f"Successfully fetched all segments")
-    return pd.concat([item for item in collect if item is not None])
+
+    # Concatenate the result into a single DataFrame and return
+    return pd.concat([item for item in result if item is not None])
 
 
 def isValidQuery(query: Query, retry: int):
+    """Check if the query is valid"""
+
+    # Check on the validity of the coursetype and yuanxi field
     options = getOptions(retry)
     if options is None:
         logger.critical("Failed to get options")
@@ -186,6 +223,8 @@ def isValidQuery(query: Query, retry: int):
             logger.critical(f"{k}: {v}")
         logger.critical(f"But got invalid coursetype code: {query.coursetype}")
         return False
+
+    # Check on the validity of the yearandseme field
     year_s, year_e, semester = map(int, query.yearandseme.split("-"))
     if year_e != year_s + 1 or semester < 1 or semester > 3:
         logger.critical(f"Invalid yearandseme: {query.yearandseme}")
@@ -198,6 +237,8 @@ def isValidQuery(query: Query, retry: int):
 
 def main():
     global logger
+
+    # Parse input arguments
     argparser = ArgumentParser()
     argparser.add_argument(
         "-c",
@@ -249,28 +290,33 @@ def main():
     )
     argparser.add_argument(
         "YearAndSeme",
-        help="Year and semester to look up for (default 22-23-1 stands for the first semester in year 2022-2023)",
+        help="Year and semester to look up for (e.g. 22-23-1 stands for the first semester in year 2022-2023)",
         type=str,
-        default="22-23-1",
     )
     args = argparser.parse_args()
     logger.setLevel(args.loglevel * 10)
+
+    # Setting up query parameters and do some checks
     query = Query(
         args.coursename,
         args.teachername,
         args.YearAndSeme,
-        str(args.coursetype),
-        str(args.yuanxi),
+        args.coursetype,
+        args.yuanxi,
     )
     logger.info(f"Querying {query2str(query)}")
     if not isValidQuery(query, args.retry):
         logger.critical(f"Encountered invalid query parameters, aborting...")
         return
+
+    # Check if output file exists
     if os.path.exists(f"{query2str(query)}.csv") and not args.force:
         logger.info(
             f"File {query2str(query)}.csv already exists, use -f to force overwrite"
         )
         return
+
+    # Fetch and save
     df = getCourseList(query, args.retry)
     if df is not None:
         df.sort_values(by="序号").to_csv(f"{query2str(query)}.csv", encoding="utf-8-sig")
