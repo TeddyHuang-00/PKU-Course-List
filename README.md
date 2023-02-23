@@ -20,7 +20,7 @@ You can check out the usage of parameters by typing `python3 main.py -h`:
 usage: main.py [-h] [-c COURSENAME] [-t TEACHERNAME] [-s COURSETYPE] [-y YUANXI] [-r RETRY] [-l LOGLEVEL] [-f] YearAndSeme
 
 positional arguments:
-  YearAndSeme           Year and sememster to look up for (default 22-23-1 stands for the first sememster in year 2022-2023)
+  YearAndSeme           Year and semester to look up for (default 22-23-1 stands for the first semester in year 2022-2023)
 
 options:
   -h, --help            show this help message and exit
