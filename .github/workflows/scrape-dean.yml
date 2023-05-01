@@ -22,9 +22,14 @@ jobs:
 
       - name: Download artifacts
         uses: actions/download-artifact@v3
+        continue-on-error: true
         with:
           name: dean
           path: artifacts
+
+      - name: Setup outdir
+        run: |
+          - mkdir artifacts
 
       - name: Setup Python
         uses: actions/setup-python@v4
