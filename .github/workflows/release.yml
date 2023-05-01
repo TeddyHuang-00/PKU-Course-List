@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Get date
+        id: date
+        run: |
+          echo "::set-output name=date::$(date +'%Y-%m-%d')"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: dean
+          path: artifacts
+
+      - uses: ncipollo/release-action@v1
+        with:
+          artifacts: "artifacts/*.csv"
+          token: ${{ secrets.YOUR_GITHUB_TOKEN }}
+          name: Release (${{ steps.date.outputs.date }})
+          tag: ${{ steps.date.outputs.date }}
