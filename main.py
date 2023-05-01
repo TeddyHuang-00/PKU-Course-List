@@ -95,7 +95,7 @@ def getCourseListPart(query: Query, startrow: str, retry: int):
     df.set_index("序号", inplace=True)
 
     # Log success information
-    logger.info(f"Successfully got course list row {startrow}-{int(startrow)+9}")
+    logger.debug(f"Successfully got course list row {startrow}-{int(startrow)+9}")
     return df
 
 
