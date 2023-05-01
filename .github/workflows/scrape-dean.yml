@@ -28,8 +28,9 @@ jobs:
           path: artifacts
 
       - name: Setup outdir
+        continue-on-error: true
         run: |
-          - mkdir artifacts
+          mkdir artifacts
 
       - name: Setup Python
         uses: actions/setup-python@v4
