@@ -1,16 +1,24 @@
 name: Scrape Dean
 
 on:
-  workflow_call:
+  schedule:
+    - cron: "0 0 * * 0"
   workflow_dispatch:
 
 jobs:
   scrape-dean:
     name: Scrape Dean
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Setup job
         uses: actions/checkout@v3
+
+      - name: Get date
+        id: date
+        run: |
+          echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
       - name: Download artifacts
         uses: actions/download-artifact@v3
@@ -41,3 +49,14 @@ jobs:
         with:
           name: dean
           path: artifacts
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*.csv
+          name: Weekly Release (${{ steps.date.outputs.date }})
+          tag_name: ${{ steps.date.outputs.date }}
+          body: ${{ steps.date.outputs.date }}
+          draft: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
