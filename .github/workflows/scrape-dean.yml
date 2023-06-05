@@ -6,62 +6,65 @@ on:
   workflow_dispatch:
 
 jobs:
-  scrape-dean:
-    name: Scrape Dean
-    permissions:
-      contents: write
+  build-matrix:
     runs-on: ubuntu-latest
+    steps:
+      - name: Setup year matrix
+        id: set-matrix
+        run: |
+          years=$(echo $(seq 11 $(date +'%y') | tr '\n' ',' | sed 's/,$//' | awk '{print "[" $0 "]"}'))
+          echo "year_range=${years}" >> $GITHUB_OUTPUT
+      - name: Echo matrix
+        run: |
+          echo "${{ steps.set-matrix.outputs.year_range }}"
+    outputs:
+      year_range: ${{ steps.set-matrix.outputs.year_range }}
+
+  scrape-dean:
+    needs: build-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        years: ${{ fromJson(needs.build-matrix.outputs.year_range) }}
+        semester: ["1", "2", "3"]
     steps:
       - name: Setup job
         uses: actions/checkout@v3
-
-      - name: Get date
-        id: date
-        run: |
-          echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
-        continue-on-error: true
-        with:
-          name: dean
-          path: artifacts/
-
-      - name: Setup outdir
-        continue-on-error: true
-        run: |
-          mkdir artifacts
-
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
-
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip
           pip3 install -r requirements.txt
-
       - name: Run scraper
-        run: |
-          python3 all.py
-
-      - name: Update artifacts
-        run: |
-          find . -name "*.csv" -exec bash -c 'file="$1"; rsync --max-size=$(stat -c '%s' "$file") "$file" "artifacts/$file"' _ {} \;
-
+        run: python3 main.py ${{ matrix.years }}-$(expr ${${{ matrix.years }}} + 1)-${{ matrix.semester }}
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: dean
+          name: collected
+          path: ./*.csv
+  release:
+    needs: scrape-dean
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Get date
+        id: date
+        run: |
+          echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: collected
           path: artifacts/
-          retention-days: 15
-
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
           files: artifacts/*.csv
-          name: Weekly Release (${{ steps.date.outputs.date }})
+          name: Release (${{ steps.date.outputs.date }})
           tag_name: ${{ steps.date.outputs.date }}
           body: ${{ steps.date.outputs.date }}
           draft: false
