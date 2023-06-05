@@ -17,7 +17,7 @@ $ pip install -r requirements.txt
 You can check out the usage of parameters by typing `python3 main.py -h`:
 
 ```sh
-usage: main.py [-h] [-c COURSENAME] [-t TEACHERNAME] [-s COURSETYPE] [-y YUANXI] [-r RETRY] [-l LOGLEVEL] [-f] YearAndSeme
+usage: main.py [-h] [-c COURSENAME] [-t TEACHERNAME] [-s COURSETYPE] [-y YUANXI] [-r RETRY] [-l LOGLEVEL] [-p] [-f] YearAndSeme
 
 positional arguments:
   YearAndSeme           Year and semester to look up for (e.g. 22-23-1 stands for the first semester in year 2022-2023)
@@ -36,5 +36,6 @@ options:
                         Max number of retries before giving up (default 3)
   -l LOGLEVEL, --loglevel LOGLEVEL
                         Log level for printing to console (default 2:INFO)
+  -p, --parallel        Enable multi-processing scraping (default False)
   -f, --force           Overwrite the existing output file (default False)
 ```

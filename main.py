@@ -1,6 +1,7 @@
 import functools as ft
 import logging
 import os
+import random
 import re
 from argparse import ArgumentParser
 from collections import namedtuple
@@ -15,9 +16,23 @@ Query = namedtuple(
     "Query", ["coursename", "teachername", "yearandseme", "coursetype", "yuanxi"]
 )
 
+user_agents = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36 Edg/89.0.774.63",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36 Edg/89.0.774.63",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36 OPR/75.0.3969.267",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36 OPR/75.0.3969.267",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36 Vivaldi/3.8.2259.37",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36 Vivaldi/3.8.2259.37",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36 Firefox/87.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36 Firefox/87.0",
+]
+
 headers = {
-    "origin": "http://www.dean.pku.edu.cn",
-    "referer": "http://www.dean.pku.edu.cn/service/web/courseSearch.php",
+    "Origin": "http://www.dean.pku.edu.cn",
+    "Referer": "http://www.dean.pku.edu.cn/service/web/courseSearch.php",
+    "Content-Type": "application/x-www-form-urlencoded",
 }
 data = Query("", "", "22-23-1", "0", "0")
 HTML_tag_pattern = re.compile("<.*?>")
@@ -41,6 +56,11 @@ logger = logging.getLogger()
 logger.addHandler(RichHandler())
 
 
+def getHeaders():
+    global headers
+    return headers | {"User-Agent": random.choice(user_agents)}
+
+
 def query2str(query: Query):
     return f"CN{query.coursename}_TN{query.teachername}_YS{query.yearandseme}_CT{query.coursetype}_YX{query.yuanxi}"
 
@@ -55,7 +75,7 @@ def _post(query: Query, startrow: str = "0"):
     global logger
     logger.debug(f"POST {request_url} with {query._asdict() | {'startrow': startrow}}")
     return requests.post(
-        request_url, headers=headers, data=query._asdict() | {"startrow": startrow}
+        request_url, headers=getHeaders(), data=query._asdict() | {"startrow": startrow}
     )
 
 
@@ -137,14 +157,14 @@ def getOptions(retry: int):
 
     global logger
     logger.debug(f"GET {base_url}")
-    response = requests.get(base_url, headers=headers)
+    response = requests.get(base_url, headers=getHeaders())
 
     # Loop to re-attempt if the server does not return a 200 status code
     while response.status_code != 200 and retry > 0:
         logger.warning(
             f"Got status code {response.status_code} from server, retrying {retry} times left..."
         )
-        response = requests.get(base_url, headers=headers)
+        response = requests.get(base_url, headers=getHeaders())
         retry -= 1
 
     # Return error message if the request fails after having retried
@@ -166,7 +186,7 @@ def getOptions(retry: int):
     return yuanxi, coursetype
 
 
-def getCourseList(query: Query = data, retry: int = 3):
+def getCourseList(query: Query = data, retry: int = 3, parallel: bool = False):
     """Retrieve a complete list of courses matching the provided query."""
 
     global logger
@@ -187,9 +207,15 @@ def getCourseList(query: Query = data, retry: int = 3):
     logger.info(f"Got {total_count} courses, {len(segs)} segments to fetch")
 
     # Iterate over each segment and try to retrieve the courses
-    # using a multiprocessing pool to speed up
-    pool = Pool()
-    result = pool.map(ft.partial(getCourseListPart, query, retry=retry), map(str, segs))
+    if parallel:
+        # use a multiprocessing pool to speed up
+        pool = Pool()
+        result = pool.map(
+            ft.partial(getCourseListPart, query, retry=retry), map(str, segs)
+        )
+    else:
+        # use good old for loop
+        result = [getCourseListPart(query, str(seg), retry) for seg in segs]
 
     # Check if there are any failed requests left
     failed = [idx * 10 for idx, item in enumerate(result) if item is None]
@@ -283,6 +309,12 @@ def main():
         default=2,
     )
     argparser.add_argument(
+        "-p",
+        "--parallel",
+        help="Enable multi-processing scraping (default False)",
+        action="store_true",
+    )
+    argparser.add_argument(
         "-f",
         "--force",
         help="Overwrite the existing output file (default False)",
@@ -317,7 +349,7 @@ def main():
         return
 
     # Fetch and save
-    df = getCourseList(query, args.retry)
+    df = getCourseList(query, args.retry, args.parallel)
     if df is not None:
         df.sort_values(by="序号").to_csv(f"{query2str(query)}.csv", encoding="utf-8-sig")
         logger.info(f"Job finished, saved to {query2str(query)}.csv")
