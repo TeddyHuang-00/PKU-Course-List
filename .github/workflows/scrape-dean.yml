@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        years: ${{ fromJson(needs.build-matrix.outputs.year_range) }}
+        year: ${{ fromJson(needs.build-matrix.outputs.year_range) }}
         semester: ["1", "2", "3"]
     steps:
       - name: Setup job
@@ -38,8 +38,15 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip
           pip3 install -r requirements.txt
+      - name: Get run params
+        id: get-run-params
+        run: |
+          start_year=${{ matrix.year }}
+          end_year=$(expr ${start_year} + 1)
+          semester=${{ matrix.semester }}
+          echo "params=${start_year}-${end_year}-${semester}" >> $GITHUB_OUTPUT
       - name: Run scraper
-        run: python3 main.py ${{ matrix.years }}-$(expr ${${{ matrix.years }}} + 1)-${{ matrix.semester }}
+        run: python3 main.py ${{ steps.get-run-params.outputs.params }}
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
