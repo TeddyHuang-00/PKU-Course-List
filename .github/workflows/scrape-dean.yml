@@ -48,7 +48,7 @@ jobs:
       - name: Run scraper
         run: python3 main.py ${{ steps.get-run-params.outputs.params }}
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: collected
           path: ./*.csv
