@@ -48,7 +48,7 @@ jobs:
       - name: Run scraper
         run: python3 main.py ${{ steps.get-run-params.outputs.params }}
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: collected
           path: ./*.csv
@@ -63,7 +63,7 @@ jobs:
         run: |
           echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: collected
           path: artifacts/
